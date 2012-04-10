@@ -67,7 +67,7 @@ bufgrow(struct buf *buf, size_t neosz)
 	while (neoasz < neosz)
 		neoasz += buf->unit;
 
-	neodata = realloc(buf->data, neoasz);
+	neodata = buf->realloc(buf->data, neoasz);
 	if (!neodata)
 		return BUF_ENOMEM;
 
@@ -76,19 +76,29 @@ bufgrow(struct buf *buf, size_t neosz)
 	return BUF_OK;
 }
 
+/* bufinit: initializes the buf struct to use with custom memory functinos */
+void
+bufinit(struct buf *buf, size_t unit, sd_realloc_cb realloc_cb, sd_free_cb free_cb, sd_free_cb free_data_cb)
+{
+	if (!buf) {
+		return;
+	}
+
+	buf->data = 0;
+	buf->size = buf->asize = 0;
+	buf->unit = unit;
+
+	buf->realloc = realloc_cb;
+	buf->free = free_cb;
+	buf->free_data = free_data_cb;
+}
 
 /* bufnew: allocation of a new buffer */
 struct buf *
 bufnew(size_t unit)
 {
-	struct buf *ret;
-	ret = malloc(sizeof (struct buf));
-
-	if (ret) {
-		ret->data = 0;
-		ret->size = ret->asize = 0;
-		ret->unit = unit;
-	}
+	struct buf *ret = (struct buf *)malloc(sizeof (struct buf));
+	bufinit(ret, unit, realloc, free, free);
 	return ret;
 }
 
@@ -189,8 +199,14 @@ bufrelease(struct buf *buf)
 	if (!buf)
 		return;
 
-	free(buf->data);
-	free(buf);
+	if (buf->data && buf->free_data)
+		buf->free_data(buf->data);
+
+	if (buf->free)
+		buf->free(buf);
+
+	buf->size = buf->asize = 0;
+	buf->free_data = NULL;
 }
 
 
@@ -201,7 +217,7 @@ bufreset(struct buf *buf)
 	if (!buf)
 		return;
 
-	free(buf->data);
+	buf->free(buf->data);
 	buf->data = NULL;
 	buf->size = buf->asize = 0;
 }
